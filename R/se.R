@@ -43,10 +43,12 @@ se <- function(gfe_fit) {
   })
   
   # Pre-compute residuals Z and alpha for both routines
-  Z_mat   <- computeZ_cpp(zList, matrix(rep(theta, max(groupR)),
-                                        nrow = ncol(X), ncol = max(groupR)),
+  Z_mat   <- computeZ_unbalanced_cpp(zList, if(length(unlist(theta)) == ncol(X)}{matrix(rep(theta, max(groupR)),
+                                        nrow = ncol(X), ncol = max(groupR))}else{
+                                          theta
+                                        },
                           groupR)
-  alpha0  <- computeAlpha_cpp(Z_mat, groupR)
+  alpha0  <- computeAlpha_unbalanced_cpp(Z_mat, groupR)
   
   # Dispatch based on number of slope parameters
   if (length(theta) == ncol(X)) {
