@@ -1,0 +1,8 @@
+## Use C++11 standard
+CXX_STD = CXX11
+
+## Link against R’s BLAS, LAPACK and Fortran runtime
+PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+
+CXX_STD = CXX11
+CXXFLAGS += -O3 -march=native -funroll-loops
