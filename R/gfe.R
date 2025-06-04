@@ -6,16 +6,16 @@
 #' @param data A data frame containing the variables in \code{formula} and \code{index}.
 #' @param index Character vector of length two: \code{c("id_col", "time_col")} identifying panel structure.
 #' @param G Integer number of groups; if \code{NULL}, groups will be estimated.
-#' @param itheta Numeric vector of length \eqn{p}, initial slopes; if \code{NULL}, a pooling estimate is used.
-#' @param fe Logical (default \code{FALSE}); \code{TRUE} to remove individual fixed effects first.
+#' @param itheta Numeric vector of length \eqn{p}, initial slopes; if \code{NULL}, a time fixed effects estimate is used.
+#' @param fe Logical (default \code{FALSE}); \code{TRUE} to include individual fixed effects.
 #' @param tune List with elements:
 #'   \describe{
 #'     \item{\code{M}}{number of random starts for VNS (default: 5)}
 #'     \item{\code{J}}{maximum number of local iterations per start (default: 10)}
 #'     \item{\code{n}}{maximum neighborhood size for random relocations per start (default: 10)}
 #'   }
-#' @param method Character, either \code{"wgfe"} or \code{"gfe"} (default: \code{"wgfe"}).
-#' @param hetslope Logical (default \code{FALSE}); \code{TRUE} for heterogeneous slopes across groups.
+#' @param method Character, either \code{"wgfe"} for group heteroskedasticity or \code{"gfe"} (default: \code{"wgfe"}).
+#' @param hetslope Logical (default \code{FALSE}); \code{TRUE} for group-heterogeneous coefficients.
 #' @param subset An optional vector specifying a subset of observations to use.
 #' @param na.action Function to handle missing values when building \code{model.frame} (default: \code{na.omit}).
 #' @param parallel Logical (default \code{FALSE}); \code{TRUE} to run VNS starts in parallel.
@@ -30,8 +30,8 @@
 #'     \item{\code{terms}}{the \code{terms} object for the design matrix}
 #'     \item{\code{theta}}{estimated slope vector (or matrix if heterogeneous)}
 #'     \item{\code{group}}{integer vector of final group assignments (length \eqn{N})}
-#'     \item{\code{alphas}}{matrix of group‐level intercepts (\eqn{T \times G})}
-#'     \item{\code{sigmas}}{numeric vector of group‐specific standard deviations}
+#'     \item{\code{alphas}}{matrix of estimated group fixed effects (\eqn{T \times G})}
+#'     \item{\code{sigmas}}{numeric vector of group standard deviations}
 #'     \item{\code{residuals}}{vector of unit‐by‐time residuals}
 #'     \item{\code{times}}{unique time values}
 #'     \item{\code{obj_val}}{numeric, objective value at solution}

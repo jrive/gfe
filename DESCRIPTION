@@ -21,6 +21,17 @@ Imports:
     dplyr,
     ggplot2,
     plm
+Depents:
+    Rcpp (>= 1.0.0),
+    RcppArmadillo,
+    snow,
+    parallel,
+    MASS,
+    tidyr,
+    numDeriv,
+    dplyr,
+    ggplot2,
+    plm
 LinkingTo:
     Rcpp,
     RcppArmadillo
