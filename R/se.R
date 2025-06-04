@@ -43,7 +43,7 @@ se <- function(gfe_fit) {
   })
   
   # Pre-compute residuals Z and alpha for both routines
-  Z_mat   <- computeZ_unbalanced_cpp(zList, if(length(unlist(theta)) == ncol(X)){matrix(rep(theta, max(groupR)),
+  Z_mat   <- computeZ_unbalanced_cpp(zList, if(length(c(theta)) == ncol(X)){matrix(rep(theta, max(groupR)),
                                         nrow = ncol(X), ncol = max(groupR))}else{
                                           theta
                                         },
