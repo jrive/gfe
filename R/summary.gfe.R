@@ -135,6 +135,7 @@ summary.gfe <- function(object, ...) {
       sigmas       = object$sigmas,
       method       = object$method,
       ub           = c(n_min, n_max),
+      hetslope = length(est) > p,
       fe           = object$fe
     ),
     class = "summary.gfe"
@@ -173,7 +174,7 @@ print.summary.gfe <- function(x, ...) {
       ": G = ", max(names(x$groupCounts)), "\n", sep = "")
 
   # 4) Coefficient tables
-  if (grepl("TRUE", as.character(x$call[[9]]))) {
+  if (x$hetslope) {
     # Heterogeneous case
     cat("\nHeterogeneous Coefficients:\n")
     G <- length(x$coefficients)
