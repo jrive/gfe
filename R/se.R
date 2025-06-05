@@ -41,14 +41,14 @@ se <- function(gfe_fit) {
   zList    <- lapply(seq_len(N), function(i) {
     data_mat[((i - 1) * t + 1):(i * t), , drop = FALSE]
   })
-  
+
   # Pre-compute residuals Z and alpha for both routines
   Z_mat   <- computeZ_unbalanced_cpp(zList, if(length(c(theta)) == ncol(X)){matrix(rep(theta, max(groupR)),
                                         nrow = ncol(X), ncol = max(groupR))}else{
                                           theta
                                         },
                           groupR)
-  alpha0  <- computeAlpha_unbalanced_cpp(Z_mat, groupR)
+  alpha0  <- computeAlpha_unbalanced_cpp(Z_mat, groupR)$alpha
   
   # Dispatch based on number of slope parameters
   if (length(theta) == ncol(X)) {
