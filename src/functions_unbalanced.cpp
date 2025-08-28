@@ -1164,66 +1164,40 @@ NumericVector wgfeJump_unbalanced_cpp(const IntegerVector& replaceR,
 
 // [[Rcpp::export]]
 IntegerVector localJump_unbalanced_cpp(
-    const IntegerVector& wgroups_,   // 1‐based group labels
-    const arma::mat&      Z,         // T × N, possibly containing non‐finite entries
-    const IntegerVector&  gee_,      // 1‐based list of allowed groups
+    const IntegerVector& wgroups_,   // 1-based group labels
+    const arma::mat&      Z,         // T × N, possibly containing non-finite entries
+    const IntegerVector&  gee_,      // 1-based list of allowed groups
     const std::string&    method     // either "gfe" or anything else ("wgfe")
 ) {
-  // ---------------------------
-  // 0) Quick checks on inputs
-  // ---------------------------
   const int N = wgroups_.size();
-  if (N == 0) {
-    Rcpp::stop("`wgroups` must be nonempty");
-  }
-  if (gee_.size() == 0) {
-    Rcpp::stop("`gee` must be nonempty");
-  }
-  if (Z.n_cols != static_cast<arma::uword>(N)) {
+  if (N == 0) Rcpp::stop("`wgroups` must be nonempty");
+  if (gee_.size() == 0) Rcpp::stop("`gee` must be nonempty");
+  if (Z.n_cols != static_cast<arma::uword>(N))
     Rcpp::stop("Number of columns of Z must equal length(wgroups)");
-  }
   
-  // 0a) Check that wgroups_ and gee_ are all ≥ 1
-  int min_w = min(wgroups_);
-  int min_g = min(gee_);
-  if (min_w < 1 || min_g < 1) {
-    Rcpp::stop("All entries of `wgroups` and `gee` must be ≥ 1 (they are 1‐based).");
-  }
+  int min_w = min(wgroups_), min_g = min(gee_);
+  if (min_w < 1 || min_g < 1)
+    Rcpp::stop("All entries of `wgroups` and `gee` must be ≥ 1 (1-based).");
   
-  // 0b) Convert to zero‐based (and check range)
-  arma::uvec gr0 = as<arma::uvec>(wgroups_) - 1;  // now in [0..]
-  arma::uvec gee0 = as<arma::uvec>(gee_)       - 1;  // now in [0..]
-  
-  const arma::uword max_grp0 = gr0.max();
-  const arma::uword max_gee0 = gee0.max();
-  const arma::uword G       = std::max(max_grp0, max_gee0) + 1;
-  
-  if ((gr0.max() >= G) || (gee0.max() >= G)) {
-    Rcpp::stop("Some group index in `wgroups` or `gee` is out of range.");
-  }
-  
+  arma::uvec gr0  = as<arma::uvec>(wgroups_) - 1;  // 0-based
+  arma::uvec gee0 = as<arma::uvec>(gee_)      - 1; // 0-based
+  const arma::uword G = std::max(gr0.max(), gee0.max()) + 1;
   const arma::uword T = Z.n_rows;
   
-  // ---------------------------------------------
-  // 1) Build “finite_idx” so we know which (t,i) are finite in Z
-  // ---------------------------------------------
+  // Finite indices per unit
   std::vector<arma::uvec> finite_idx(N);
-  for (arma::uword j = 0; j < static_cast<arma::uword>(N); ++j) {
+  for (arma::uword j = 0; j < static_cast<arma::uword>(N); ++j)
     finite_idx[j] = find_finite(Z.col(j));
-  }
   
-  // -----------------------------------------------------------
-  // 2) Initialize S, C, Q, cntUnit, SSE, cntEnt, sigma
-  // -----------------------------------------------------------
-  arma::mat   S(T, G, fill::zeros);      // S(t,g)  = ∑_{i∈g, Z(t,i) finite} Z(t,i)
-  arma::imat  C(T, G, fill::zeros);      // C(t,g)  = count of finite Z(t,i) for i∈g
-  arma::mat   Q(T, G, fill::zeros);      // Q(t,g)  = ∑_{i∈g, Z(t,i)^2}
-  arma::uvec  cntUnit(G, fill::zeros);  // how many units i are in group g (regardless of NA)
+  // Per-group aggregates
+  arma::mat  S(T, G, arma::fill::zeros);
+  arma::imat C(T, G, arma::fill::zeros);
+  arma::mat  Q(T, G, arma::fill::zeros);
+  arma::uvec cntUnit(G, arma::fill::zeros);   // units per group
   
-  // 2a) Accumulate per‐group sums & counts
   for (arma::uword j = 0; j < static_cast<arma::uword>(N); ++j) {
     arma::uword g = gr0[j];
-    cntUnit[g] += 1ULL;
+    cntUnit[g] += 1u;
     const arma::uvec& t_idx = finite_idx[j];
     for (arma::uword k = 0; k < t_idx.n_elem; ++k) {
       arma::uword t = t_idx[k];
@@ -1234,284 +1208,178 @@ IntegerVector localJump_unbalanced_cpp(
     }
   }
   
-  // 2b) Compute initial SSE_g, cntEnt_g, sigma_g
-  arma::vec   SSE(G,    fill::zeros);
-  arma::uvec  cntEnt(G, fill::zeros);
-  arma::vec   sigma(G,  fill::zeros);
+  arma::vec  SSE(G, arma::fill::zeros);
+  arma::uvec cntEnt(G, arma::fill::zeros);
+  arma::vec  sigma(G, arma::fill::zeros);
   
   for (arma::uword g = 0; g < G; ++g) {
-    double sse_g      = 0.0;
-    arma::uword total = 0;
+    double sse_g = 0.0; arma::uword total = 0;
     for (arma::uword t = 0; t < T; ++t) {
-      int c = C(static_cast<int>(t), static_cast<int>(g));
+      int c = C((int)t, (int)g);
       if (c > 0) {
-        double s = S(static_cast<int>(t), static_cast<int>(g));
-        double q = Q(static_cast<int>(t), static_cast<int>(g));
-        sse_g   += (q - (s * s) / double(c));
-        total  += static_cast<arma::uword>(c);
+        double s = S((int)t, (int)g), q = Q((int)t, (int)g);
+        sse_g += (q - (s * s) / double(c));
+        total += (arma::uword)c;
       }
     }
     SSE[g]    = sse_g;
     cntEnt[g] = total;
-    sigma[g]  = (total > 0ULL)
-      ? std::sqrt(sse_g / double(total))
-        : std::numeric_limits<double>::quiet_NaN();
+    sigma[g]  = (total > 0u) ? std::sqrt(sse_g / double(total))
+      : std::numeric_limits<double>::quiet_NaN();
   }
   
-  // 2c) Compute the “initial objective” total0
   double total0 = 0.0;
   if (method == "gfe") {
-    total0 = accu(SSE);
+    total0 = arma::accu(SSE);
   } else {
-    for (arma::uword g = 0; g < G; ++g) {
-      if (cntEnt[g] > 0ULL) {
-        total0 += sigma[g] * (double(cntUnit[g]) / double(N));
-      }
-    }
+    for (arma::uword g = 0; g < G; ++g)
+      if (cntEnt[g] > 0u) total0 += sigma[g] * (double(cntUnit[g]) / double(N));
   }
   
-  // --------------------------------------------------
-  // 3) Local search: iterate until no improvement for N consecutive attempts
-  // --------------------------------------------------
-  int  count = 0;
-  int  idx_i = -1;  // will wrap to 0 on the first iteration
-  
+  int count = 0, idx_i = -1;
   while (count < N) {
-    idx_i = (idx_i + 1) % N;  // cycle through units 0..N−1
-    arma::uword g_old = gr0[static_cast<arma::uword>(idx_i)];
+    idx_i = (idx_i + 1) % N;
+    arma::uword g_old = gr0[(arma::uword)idx_i];
     
-    // 3a) Build candidate list = “all gee0 except g_old”
+    // --- NEW: if moving this unit would empty its group, skip this unit
+    if (cntUnit[g_old] <= 1u) { ++count; continue; }
+    
+    // Build candidates (gee0 \ {g_old})
     std::vector<arma::uword> candidates;
     candidates.reserve(gee0.n_elem - 1);
     for (arma::uword k = 0; k < gee0.n_elem; ++k) {
       arma::uword g_cand = gee0[k];
-      if (g_cand != g_old) {
-        candidates.push_back(g_cand);
-      }
+      if (g_cand != g_old) candidates.push_back(g_cand);
     }
     const arma::uword R = candidates.size();
-    if (R == 0ULL) {
-      // No alternative: skip this unit
-      ++count;
-      continue;
-    }
+    if (R == 0u) { ++count; continue; }
     
-    // 3b) Pre‐extract “finite indices” and “full column” of Z for this unit
-    const arma::uvec&  t_idx_i = finite_idx[static_cast<arma::uword>(idx_i)];
-    arma::uword        nDev    = t_idx_i.n_elem;  // how many finite entries
-    arma::colvec       z_i     = Z.col(static_cast<arma::uword>(idx_i));
+    const arma::uvec& t_idx_i = finite_idx[(arma::uword)idx_i];
+    arma::uword       nDev    = t_idx_i.n_elem;
+    arma::colvec      z_i     = Z.col((arma::uword)idx_i);
     
-    // 3c) Evaluate each candidate group in O(T) steps
-    arma::vec obj_cand(R, fill::zeros);
-    arma::uword countDev = nDev;
-    
+    arma::vec obj_cand(R, arma::fill::zeros);
     for (arma::uword r = 0; r < R; ++r) {
-      arma::uword g_new        = candidates[r];
-      bool       removal_invalid = false;
-      bool       addition_invalid = false;
-      double     delta0         = 0.0;
-      double     delta1         = 0.0;
+      arma::uword g_new = candidates[r];
       
-      // Loop over every t = 0..T−1
+      // --- NEW: quick unit-count feasibility (avoid emptying old group)
+      if (cntUnit[g_old] <= 1u) { obj_cand[r] = std::numeric_limits<double>::infinity(); continue; }
+      
+      bool removal_invalid = false, addition_invalid = false;
+      double delta0 = 0.0, delta1 = 0.0;
+      
       for (arma::uword t = 0; t < T; ++t) {
-        double zval   = z_i[t];
-        int    C_old  = C(static_cast<int>(t), static_cast<int>(g_old));
-        int    C_new  = C(static_cast<int>(t), static_cast<int>(g_new));
+        double zval = z_i[t];
+        int C_old = C((int)t, (int)g_old);
+        int C_new = C((int)t, (int)g_new);
         
         if (std::isfinite(zval)) {
-          // Removal from old group at time t
-          if (C_old == 1) {
-            removal_invalid = true;
-            break;
-          }
-          double S0    = S(static_cast<int>(t), static_cast<int>(g_old));
-          double Q0    = Q(static_cast<int>(t), static_cast<int>(g_old));
-          double S0p   = S0 - zval;
-          double Q0p   = Q0 - zval*zval;
-          int    C0p   = C_old - 1;
-          double sse0_old = Q0 - (S0 * S0) / double(C_old);
-          double sse0_new = (C0p > 0)
-            ? (Q0p - (S0p * S0p) / double(C0p))
-            : 0.0;
+          if (C_old == 1) { removal_invalid = true; break; }   // per-time emptiness
+          double S0=S((int)t,(int)g_old), Q0=Q((int)t,(int)g_old);
+          double S0p=S0 - zval, Q0p=Q0 - zval*zval; int C0p=C_old - 1;
+          double sse0_old = Q0 - (S0*S0)/double(C_old);
+          double sse0_new = (C0p>0) ? (Q0p - (S0p*S0p)/double(C0p)) : 0.0;
           delta0 += (sse0_new - sse0_old);
           
-          // Addition to new group at time t
-          double S1    = S(static_cast<int>(t), static_cast<int>(g_new));
-          double Q1    = Q(static_cast<int>(t), static_cast<int>(g_new));
-          double S1p   = S1 + zval;
-          double Q1p   = Q1 + zval*zval;
-          int    C1p   = C_new + 1;
-          double sse1_old = (C_new > 0)
-            ? (Q1 - (S1 * S1) / double(C_new))
-            : 0.0;
-          double sse1_new = Q1p - (S1p * S1p) / double(C1p);
+          double S1=S((int)t,(int)g_new), Q1=Q((int)t,(int)g_new);
+          double S1p=S1 + zval, Q1p=Q1 + zval*zval; int C1p=C_new + 1;
+          double sse1_old = (C_new>0) ? (Q1 - (S1*S1)/double(C_new)) : 0.0;
+          double sse1_new = Q1p - (S1p*S1p)/double(C1p);
           delta1 += (sse1_new - sse1_old);
-          
         } else {
-          // zval not finite → we only “add” to new group if C_new>0; otherwise invalid
-          if (C_new == 0) {
-            addition_invalid = true;
-            break;
-          }
-          // Removal from old group does not change SSE, because zval did not contribute
+          if (C_new == 0) { addition_invalid = true; break; }
         }
-      } // end for t
+      }
       
       if (removal_invalid || addition_invalid) {
         obj_cand[r] = std::numeric_limits<double>::infinity();
+      } else if (method == "gfe") {
+        obj_cand[r] = total0 + delta0 + delta1;
       } else {
-        // Evaluate objective after that single‐unit move
-        if (method == "gfe") {
-          obj_cand[r] = total0 + delta0 + delta1;
-        } else {
-          // “wgfe”‐style: update only 2 groups in O(1)
-          double sse_old   = SSE[static_cast<arma::uword>(g_old)];
-          double sse_new_g = SSE[static_cast<arma::uword>(g_new)];
-          
-          arma::uword cntEnt_old0 = cntEnt[static_cast<arma::uword>(g_old)];
-          arma::uword cntEnt_new0 = cntEnt[static_cast<arma::uword>(g_new)];
-          arma::uword n_old       = cntUnit[static_cast<arma::uword>(g_old)];
-          arma::uword n_new       = cntUnit[static_cast<arma::uword>(g_new)];
-          
-          double sse_old_p = sse_old   + delta0;
-          double sse_new_p = sse_new_g + delta1;
-          
-          arma::uword cntEnt_old_p = cntEnt_old0 - countDev;
-          arma::uword cntEnt_new_p = cntEnt_new0 + countDev;
-          arma::uword n_old_p       = n_old - 1;
-          arma::uword n_new_p       = n_new + 1;
-          
-          double sigma_old   = (cntEnt_old0 > 0ULL)
-            ? std::sqrt(sse_old   / double(cntEnt_old0))
-              : 0.0;
-          double sigma_new   = (cntEnt_new0 > 0ULL)
-            ? std::sqrt(sse_new_g / double(cntEnt_new0))
-              : 0.0;
-          double sigma_old_p = (cntEnt_old_p > 0ULL)
-            ? std::sqrt(sse_old_p / double(cntEnt_old_p))
-              : 0.0;
-          double sigma_new_p = std::sqrt(sse_new_p / double(cntEnt_new_p));
-          
-          double old_contrib = sigma_old * (double(n_old) / double(N))
-            + sigma_new * (double(n_new) / double(N));
-          double new_contrib = sigma_old_p * (double(n_old_p) / double(N))
-            + sigma_new_p * (double(n_new_p) / double(N));
-          
-          obj_cand[r] = total0 - old_contrib + new_contrib;
-        }
-      }
-    } // end for r
-    
-    // 3d) Find the best candidate
-    arma::uword best_idx = obj_cand.index_min();
-    double     obj_best  = obj_cand[best_idx];
-    
-    if (obj_best < total0) {
-      // Accept the move: idx_i jumps from g_old → g_best
-      arma::uword g_best = candidates[best_idx];
-      
-      // Recompute deltas for that best move, and update S, Q, C, SSE, cntEnt, cntUnit, sigma, total0
-      double delta0_best = 0.0;
-      double delta1_best = 0.0;
-      for (arma::uword t = 0; t < T; ++t) {
-        double zval  = z_i[t];
-        int    C_old = C(static_cast<int>(t), static_cast<int>(g_old));
-        int    C_new = C(static_cast<int>(t), static_cast<int>(g_best));
-        
-        if (std::isfinite(zval)) {
-          // Removal from g_old
-          double S0 = S(static_cast<int>(t), static_cast<int>(g_old));
-          double Q0 = Q(static_cast<int>(t), static_cast<int>(g_old));
-          double S0p = S0 - zval;
-          double Q0p = Q0 - zval*zval;
-          int    C0p = C_old - 1;
-          double sse0_old = Q0 - (S0 * S0) / double(C_old);
-          double sse0_new = (C0p > 0)
-            ? (Q0p - (S0p * S0p) / double(C0p))
-            : 0.0;
-          delta0_best += (sse0_new - sse0_old);
-          
-          // Update S, Q, C for g_old
-          S(static_cast<int>(t), static_cast<int>(g_old)) -= zval;
-          Q(static_cast<int>(t), static_cast<int>(g_old)) -= (zval*zval);
-          C(static_cast<int>(t), static_cast<int>(g_old)) -= 1;
-          
-          // Addition to g_best
-          double S1 = S(static_cast<int>(t), static_cast<int>(g_best));
-          double Q1 = Q(static_cast<int>(t), static_cast<int>(g_best));
-          double S1p = S1 + zval;
-          double Q1p = Q1 + zval*zval;
-          int    C1p = C_new + 1;
-          double sse1_old = (C_new > 0)
-            ? (Q1 - (S1 * S1) / double(C_new))
-            : 0.0;
-          double sse1_new = Q1p - (S1p * S1p) / double(C1p);
-          delta1_best += (sse1_new - sse1_old);
-          
-          // Update S, Q, C for g_best
-          S(static_cast<int>(t), static_cast<int>(g_best)) += zval;
-          Q(static_cast<int>(t), static_cast<int>(g_best)) += (zval*zval);
-          C(static_cast<int>(t), static_cast<int>(g_best)) += 1;
-        }
-      }
-      
-      // Update SSE, cntEnt, cntUnit, sigma, and total0
-      {
-        // old SSE and new SSE
-        SSE[g_old]  += delta0_best;
-        SSE[g_best] += delta1_best;
+        double sse_old   = SSE[g_old];
+        double sse_new_g = SSE[g_new];
         
         arma::uword cntEnt_old0 = cntEnt[g_old];
-        arma::uword cntEnt_new0 = cntEnt[g_best];
-        arma::uword cntEnt_old_p = cntEnt_old0 - countDev;
-        arma::uword cntEnt_new_p = cntEnt_new0 + countDev;
+        arma::uword cntEnt_new0 = cntEnt[g_new];
+        arma::uword n_old       = cntUnit[g_old];
+        arma::uword n_new       = cntUnit[g_new];
         
-        cntEnt[g_old]  = cntEnt_old_p;
-        cntEnt[g_best] = cntEnt_new_p;
+        double sse_old_p = sse_old   + delta0;
+        double sse_new_p = sse_new_g + delta1;
         
-        cntUnit[g_old]  -= 1;
-        cntUnit[g_best] += 1;
+        arma::uword cntEnt_old_p = cntEnt_old0 - nDev;
+        arma::uword cntEnt_new_p = cntEnt_new0 + nDev;
+        arma::uword n_old_p      = n_old - 1u;
+        arma::uword n_new_p      = n_new + 1u;
         
-        if (method != "gfe") {
-          double sse_old_p = SSE[g_old];
-          double sse_new_p = SSE[g_best];
-          double sigma_old_p = (cntEnt_old_p > 0ULL)
-            ? std::sqrt(sse_old_p / double(cntEnt_old_p))
-              : 0.0;
-          double sigma_new_p = std::sqrt(sse_new_p / double(cntEnt_new_p));
-          sigma[g_old]  = sigma_old_p;
-          sigma[g_best] = sigma_new_p;
-          
-          // total0 becomes the new objective
-          total0 = obj_best;
-        } else {
-          // For “gfe,” total0 = sum(SSE)
-          total0 = 0.0;
-          for (arma::uword g = 0; g < G; ++g) {
-            total0 += SSE[g];
-          }
-        }
+        double sigma_old   = (cntEnt_old0>0u) ? std::sqrt(sse_old   / double(cntEnt_old0)) : 0.0;
+        double sigma_new   = (cntEnt_new0>0u) ? std::sqrt(sse_new_g / double(cntEnt_new0)) : 0.0;
+        double sigma_old_p = (cntEnt_old_p>0u) ? std::sqrt(sse_old_p / double(cntEnt_old_p)) : 0.0;
+        double sigma_new_p = std::sqrt(sse_new_p / double(cntEnt_new_p));
+        
+        double old_contrib = sigma_old * (double(n_old) / double(N))
+          + sigma_new * (double(n_new) / double(N));
+        double new_contrib = sigma_old_p * (double(n_old_p) / double(N))
+          + sigma_new_p * (double(n_new_p) / double(N));
+        
+        obj_cand[r] = total0 - old_contrib + new_contrib;
       }
-      
-      // Update the grouping
-      gr0[static_cast<arma::uword>(idx_i)] = g_best;
-      count = 0;
-      
-    } else {
-      // no improvement → increment the “bad‐step” counter
-      ++count;
     }
+    
+    arma::uword best_idx = obj_cand.index_min();
+    double obj_best = obj_cand[best_idx];
+    
+    if (!(obj_best < total0)) { ++count; continue; }
+    
+    // Apply best move
+    arma::uword g_best = candidates[best_idx];
+    double delta0_best = 0.0, delta1_best = 0.0;
+    for (arma::uword t = 0; t < T; ++t) {
+      double zval = z_i[t];
+      int C_old = C((int)t,(int)g_old);
+      int C_new = C((int)t,(int)g_best);
+      if (std::isfinite(zval)) {
+        double S0=S((int)t,(int)g_old), Q0=Q((int)t,(int)g_old);
+        double S0p=S0 - zval, Q0p=Q0 - zval*zval; int C0p=C_old - 1;
+        double sse0_old = Q0 - (S0*S0)/double(C_old);
+        double sse0_new = (C0p>0) ? (Q0p - (S0p*S0p)/double(C0p)) : 0.0;
+        delta0_best += (sse0_new - sse0_old);
+        S((int)t,(int)g_old) -= zval; Q((int)t,(int)g_old) -= (zval*zval); C((int)t,(int)g_old) -= 1;
+        
+        double S1=S((int)t,(int)g_best), Q1=Q((int)t,(int)g_best);
+        double S1p=S1 + zval, Q1p=Q1 + zval*zval; int C1p=C_new + 1;
+        double sse1_old = (C_new>0) ? (Q1 - (S1*S1)/double(C_new)) : 0.0;
+        double sse1_new = Q1p - (S1p*S1p)/double(C1p);
+        delta1_best += (sse1_new - sse1_old);
+        S((int)t,(int)g_best) += zval; Q((int)t,(int)g_best) += (zval*zval); C((int)t,(int)g_best) += 1;
+      }
+    }
+    
+    // Update summaries & objective
+    SSE[g_old]  += delta0_best;
+    SSE[g_best] += delta1_best;
+    
+    cntEnt[g_old]  -= nDev;
+    cntEnt[g_best] += nDev;
+    
+    cntUnit[g_old]  -= 1u;
+    cntUnit[g_best] += 1u;
+    
+    if (method != "gfe") {
+      double sse_old_p = SSE[g_old], sse_new_p = SSE[g_best];
+      double sigma_old_p = (cntEnt[g_old]>0u) ? std::sqrt(sse_old_p / double(cntEnt[g_old])) : 0.0;
+      double sigma_new_p = std::sqrt(sse_new_p / double(cntEnt[g_best]));
+      sigma[g_old] = sigma_old_p; sigma[g_best] = sigma_new_p;
+      total0 = obj_best;
+    } else {
+      total0 = arma::accu(SSE);
+    }
+    
+    gr0[(arma::uword)idx_i] = g_best;
+    count = 0;
   }
   
-  // ----------------------------------------------------------------
-  // If we exit the loop because count == N, it means “no valid move was found
-  // in N consecutive tries.”  In that case, total0 still holds the “current”
-  // objective.  We now convert gr0 back to 1-based, and return both.
-  // ----------------------------------------------------------------
-  arma::uvec gr1 = gr0 + 1;
-  IntegerVector outGroups = wrap(gr1);
-  
-  return outGroups;
+  return wrap(gr0 + 1);  // back to 1-based
 }
 
 

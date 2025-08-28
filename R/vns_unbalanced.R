@@ -78,7 +78,6 @@ vns_unbalanced <- function(z, theta0, t, params, G, method, hetslope = FALSE) {
         fobj_star <- gfeObj_unbalanced_cpp(Z_cur, wgroups)
       }
     }
-    
     # 6) Variable-Neighborhood Search loops
     k <- 0L  # count of failed alpha validity checks
     j <- 1L
@@ -86,14 +85,24 @@ vns_unbalanced <- function(z, theta0, t, params, G, method, hetslope = FALSE) {
       n <- 1L
       while (n <= params$n) {
         # 6a) Random relocation of n units
-        w2 <- wgroups
-        to_move <- sample(Seq, n)
-        for (i in to_move) {
-          w2[i] <- sample(gee[-w2[i]], 1)
+        w_check <- 0
+        l <- 0
+        # 6a) Random relocations of size n
+        while (max(w_check)< G){
+          l <- l + 1
+          w2 <- random_move_cpp(wgroups, gee, Seq, n)
+          # 6b) Refine and jump
+          w_check <- refineGroups_unbalanced_cpp(z, w2, hetslope, method)
+          if (max(w_check)< G){
+            l <- l + 1
+            if (l >= 5){
+              break
+            }
+            next
+          }
         }
         
-        # 6b) Refine & jump (unbalanced)
-        w2 <- refineGroups_unbalanced_cpp(z, w2, hetslope, method)
+        w2 <- w_check
         
         # 6c) WGFE/GFE update of theta under w2
         if (method != "gfe") {
@@ -123,7 +132,7 @@ vns_unbalanced <- function(z, theta0, t, params, G, method, hetslope = FALSE) {
         alpha2_list <- computeAlpha_unbalanced_cpp(Z2, w2)
         if (!isTRUE(alpha2_list$valid)) {
           k <- k + 1L
-          if (k > 50L) {
+          if (k > 5L) {
             k <- 0L
             n <- n + 1L
           }

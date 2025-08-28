@@ -77,7 +77,8 @@ gfe <- function(formula,
       itheta    = itheta,
       fe        = fe,
       hetslope  = hetslope,
-      tune      = list(M = 20, J = 10, neigh = 5)
+      method = method,
+      tune      = list(M = 20, J = 10, neigh = 10)
     )
   }
   if (G < 2L){
@@ -136,7 +137,6 @@ gfe <- function(formula,
   z <- lapply(split(seq_len(nrow(datm)), id), function(rows) {
     datm[rows, , drop = FALSE]
   })
-  
   # 9) Run VNS for each random start (parallel or sequential)
   if (isTRUE(parallel)) {
     clust <- parallel::makeCluster(ncores)
@@ -171,7 +171,7 @@ gfe <- function(formula,
       }
     )
   }
-  
+
   # 10) Select best solution
   mins  <- vapply(results, `[[`, numeric(1), "minimum")
   best  <- which.min(mins)

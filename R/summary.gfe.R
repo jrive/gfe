@@ -154,7 +154,6 @@ print.summary.gfe <- function(x, ...) {
   # 1) Print the original call
   cat("Call:\n")
   print(x$call)
-
   # 2) Balanced vs. unbalanced panel info
   N_total <- sum(x$groupCounts)
   if (x$ub[1] != x$ub[2]) {
@@ -171,7 +170,7 @@ print.summary.gfe <- function(x, ...) {
       if (x$method != "gfe") "Weighted " else "",
       "Grouped Fixed Effects Estimation",
       if (isTRUE(x$fe)) " with Individual Fixed Effects" else "",
-      ": G = ", max(names(x$groupCounts)), "\n", sep = "")
+      ": G = ", max(as.numeric(x$alpha_df$group)), "\n", sep = "")
 
   # 4) Coefficient tables
   if (x$hetslope) {

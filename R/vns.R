@@ -24,8 +24,8 @@ vns <- function(z, theta0, t, params, G, method, hetslope = FALSE) {
   Seq <- seq_len(N)
   gee <- seq_len(G)
   skipper <- FALSE
-  
-  tryCatch({
+  K <- 10
+   tryCatch({
     # 1) Random perturbation of theta
     theta <- theta0 + 0.2 * runif(p) - 0.1
     
@@ -70,22 +70,33 @@ vns <- function(z, theta0, t, params, G, method, hetslope = FALSE) {
         fobj_star <- gfeObj_cpp(Z_cur, wgroups)
       }
     }
-    
     # 6) VNS main loops
     j <- 1L
     while (j <= params$J) {
       n <- 1L
       while (n <= params$n) {
+        w_check <- 0
+        k <- 0
         # 6a) Random relocations of size n
-        w2 <- wgroups
-        to_move <- sample(Seq, n)
-        for (i in to_move) {
-          w2[i] <- sample(gee[-w2[i]], 1)
+        while (max(w_check)< G){
+          k <- k + 1
+          w2 <- random_move_cpp(wgroups, gee, Seq, n)
+          # 6b) Refine and jump
+          w_check <- refineGroups_cpp(z, w2, hetslope, method)
+          if (max(w_check)< G){
+            k <- k + 1
+            if (k >= K){
+              break
+            }
+            next
+          }
         }
         
-        # 6b) Refine and jump
-        w2 <- refineGroups_cpp(z, w2, hetslope, method)
-        
+        w2 <- w_check
+        if (max(w2)< G){
+          n <- n + 1
+          next
+        }
         if (method != "gfe") {
           if (hetslope) {
             theta2 <- calcGroupSlopes_cpp(z, w2)
@@ -136,15 +147,15 @@ vns <- function(z, theta0, t, params, G, method, hetslope = FALSE) {
     return(list(theta = theta,
                 groups = wgroups,
                 minimum = fobj_star))
-  },
-  error = function(e) {
-    skipper <<- TRUE
-  })
-  
-  if (skipper) {
-    problem <- list(error = TRUE,
-                    issue = "VNS encountered an error",
-                    minimum = Inf)
-    return(problem)
-  }
+   },
+   error = function(e) {
+     skipper <<- TRUE
+   })
+
+   if (skipper) {
+     problem <- list(error = TRUE,
+                     issue = "VNS encountered an error",
+                     minimum = Inf)
+     return(problem)
+   }
 }

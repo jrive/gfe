@@ -334,8 +334,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // localJump_cpp
-IntegerVector localJump_cpp(IntegerVector wgroups, arma::mat Z, arma::mat alpha, IntegerVector gee, const std::string& method);
-RcppExport SEXP _gfe_localJump_cpp(SEXP wgroupsSEXP, SEXP ZSEXP, SEXP alphaSEXP, SEXP geeSEXP, SEXP methodSEXP) {
+IntegerVector localJump_cpp(IntegerVector wgroups, arma::mat Z, arma::mat alpha, IntegerVector gee, const std::string& method, int minSize);
+RcppExport SEXP _gfe_localJump_cpp(SEXP wgroupsSEXP, SEXP ZSEXP, SEXP alphaSEXP, SEXP geeSEXP, SEXP methodSEXP, SEXP minSizeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -344,22 +344,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< arma::mat >::type alpha(alphaSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type gee(geeSEXP);
     Rcpp::traits::input_parameter< const std::string& >::type method(methodSEXP);
-    rcpp_result_gen = Rcpp::wrap(localJump_cpp(wgroups, Z, alpha, gee, method));
-    return rcpp_result_gen;
-END_RCPP
-}
-// localJump_res_cpp
-IntegerVector localJump_res_cpp(List zList, NumericVector theta0, IntegerVector wgroups, NumericVector sigsg, double sig0);
-RcppExport SEXP _gfe_localJump_res_cpp(SEXP zListSEXP, SEXP theta0SEXP, SEXP wgroupsSEXP, SEXP sigsgSEXP, SEXP sig0SEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< List >::type zList(zListSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type theta0(theta0SEXP);
-    Rcpp::traits::input_parameter< IntegerVector >::type wgroups(wgroupsSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type sigsg(sigsgSEXP);
-    Rcpp::traits::input_parameter< double >::type sig0(sig0SEXP);
-    rcpp_result_gen = Rcpp::wrap(localJump_res_cpp(zList, theta0, wgroups, sigsg, sig0));
+    Rcpp::traits::input_parameter< int >::type minSize(minSizeSEXP);
+    rcpp_result_gen = Rcpp::wrap(localJump_cpp(wgroups, Z, alpha, gee, method, minSize));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -391,6 +377,20 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const Rcpp::IntegerVector& >::type groupR(groupRSEXP);
     Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type alpha0(alpha0SEXP);
     rcpp_result_gen = Rcpp::wrap(seHet_cpp(zList, theta, groupR, alpha0));
+    return rcpp_result_gen;
+END_RCPP
+}
+// random_move_cpp
+Rcpp::IntegerVector random_move_cpp(Rcpp::IntegerVector wgroups, Rcpp::IntegerVector gee, Rcpp::IntegerVector Seq, int n);
+RcppExport SEXP _gfe_random_move_cpp(SEXP wgroupsSEXP, SEXP geeSEXP, SEXP SeqSEXP, SEXP nSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type wgroups(wgroupsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type gee(geeSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type Seq(SeqSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    rcpp_result_gen = Rcpp::wrap(random_move_cpp(wgroups, gee, Seq, n));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -679,10 +679,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_gfe_assignGroups_res_cpp", (DL_FUNC) &_gfe_assignGroups_res_cpp, 4},
     {"_gfe_refineGroups_cpp", (DL_FUNC) &_gfe_refineGroups_cpp, 4},
     {"_gfe_refineGroups_res_cpp", (DL_FUNC) &_gfe_refineGroups_res_cpp, 4},
-    {"_gfe_localJump_cpp", (DL_FUNC) &_gfe_localJump_cpp, 5},
-    {"_gfe_localJump_res_cpp", (DL_FUNC) &_gfe_localJump_res_cpp, 5},
+    {"_gfe_localJump_cpp", (DL_FUNC) &_gfe_localJump_cpp, 6},
     {"_gfe_se_cpp", (DL_FUNC) &_gfe_se_cpp, 7},
     {"_gfe_seHet_cpp", (DL_FUNC) &_gfe_seHet_cpp, 4},
+    {"_gfe_random_move_cpp", (DL_FUNC) &_gfe_random_move_cpp, 4},
     {"_gfe_computeZ_unbalanced_cpp", (DL_FUNC) &_gfe_computeZ_unbalanced_cpp, 3},
     {"_gfe_computeAlpha_unbalanced_cpp", (DL_FUNC) &_gfe_computeAlpha_unbalanced_cpp, 2},
     {"_gfe_computeSigma_unbalanced_cpp", (DL_FUNC) &_gfe_computeSigma_unbalanced_cpp, 3},

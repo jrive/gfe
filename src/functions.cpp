@@ -1,5 +1,7 @@
 // [[Rcpp::depends(RcppArmadillo)]]
 #include <RcppArmadillo.h>
+#include <unordered_map>
+#include <algorithm>
 using namespace Rcpp;
 
 // [[Rcpp::export]]
@@ -1474,137 +1476,98 @@ List refineGroups_res_cpp(
 }
 
 
+
 // [[Rcpp::export]]
 IntegerVector localJump_cpp(IntegerVector  wgroups,
                             arma::mat      Z,
                             arma::mat      alpha,
                             IntegerVector  gee,
-                            const std::string& method) {
-  int N = wgroups.size();
-  // 1) initial objective
-  double oldObj;
-  if (method == "gfe") {
-    // use the original GFE objective
-    oldObj = gfeObj_cpp(Z, wgroups);
-  } else {
-    // use the WGFE‐specific objective
-    oldObj = wgfeObj_cpp(Z, wgroups);
-  }
+                            const std::string& method,
+                            int minSize = 1)  // kept arg for API compatibility; not used to block singletons
+{
+  (void)minSize; 
+  const int N = wgroups.size();
   
-  // 2) prepare 1‑based loop index, and counter
+  // --- helpers ---
+  auto max_label = [&](const IntegerVector& v){
+    int m = 0; for (int x : v) if (x > m) m = x; return m;
+  };
+  const int Gmax = std::max(max_label(wgroups), max_label(gee));
+  
+  auto compute_counts = [&](const IntegerVector& grp){
+    std::vector<int> cnt(Gmax + 1, 0);
+    for (int k = 0; k < grp.size(); ++k) {
+      int g = grp[k];
+      if (g < 1 || g > Gmax) Rcpp::stop("wgroups contains invalid label %d", g);
+      ++cnt[g];
+    }
+    return cnt; // cnt[g] valid for g in 1..Gmax
+  };
+  
+  auto keeps_all_nonempty = [&](const std::vector<int>& cnt){
+    for (int g : gee) if (cnt[g] <= 0) return false;
+    return true;
+  };
+  
+  // 1) objective
+  double oldObj = (method == "gfe") ? gfeObj_cpp(Z, wgroups) : wgfeObj_cpp(Z, wgroups);
+  
+  // 2) prep
   int i = 0, count = 0;
-  
-  // 3) we’ll need Z and alpha as R matrices for gfeJump_cpp:
   NumericMatrix Z_N     = wrap(Z);
   NumericMatrix alpha_N = wrap(alpha);
   
-  // 4) systematic “local search”:
+  // current group sizes (may include singletons—allowed)
+  std::vector<int> counts = compute_counts(wgroups);
+  
+  // 3) local search: skip only moves that would empty a group
   while (count != N) {
-    // advance i in 1..N
-    i = (i % N) + 1;
+    i = (i % N) + 1;                 // 1-based
+    const int gi = wgroups[i - 1];
     
-    // build “replace” = gee[- wgroups[i] ]
-    std::vector<int> tmp; tmp.reserve(gee.size()-1);
-    for (int g : gee) if (g != wgroups[i-1]) tmp.push_back(g);
+    // If moving i would empty its current group, skip this unit for now
+    if (counts[gi] <= 1) { ++count; continue; }
+    
+    // Candidate destination groups: all except current
+    std::vector<int> tmp; tmp.reserve(gee.size() - 1);
+    for (int g : gee) if (g != gi) tmp.push_back(g);
+    if (tmp.empty()) { ++count; continue; }
+    
     IntegerVector replaceR = wrap(tmp);
     
-    // call your existing C++ jump‐search:
-    arma::vec nb;
-    if (method == "gfe") {
-      // original jump
-      nb = gfeJump_cpp(replaceR, i, wgroups, Z_N, alpha_N);
-    } else {
-      // WGFE‐specific jump
-      nb = wgfeJump_cpp(replaceR, i, wgroups, Z_N, alpha_N);
-    }
+    // Propose best local move using your existing jump function
+    arma::vec nb = (method == "gfe")
+      ? gfeJump_cpp(replaceR, i, wgroups, Z_N, alpha_N)
+        : wgfeJump_cpp(replaceR, i, wgroups, Z_N, alpha_N);
     
-    double obj = nb[0];  // new objective
+    const double obj = nb[0];
+    
     if (obj < oldObj) {
-      // improved: adopt new grouping, reset counter
-      for (int j = 0; j < N; ++j) 
-        wgroups[j] = (int) nb[j+1];
-      oldObj = obj;
-      count  = 0;
-    }
-    else {
-      // no improvement: move on
-      ++count;
-    }
-  }
-  
-  return wgroups;
-}
-
-
-// [[Rcpp::export]]
-IntegerVector localJump_res_cpp(
-    List            zList,    // data list
-    NumericVector   theta0,   // initial slope vector
-    IntegerVector   wgroups,  // initial grouping (1…G)
-    NumericVector   sigsg,    // group variances
-    double          sig0      // scalar variance
-) {
-  int N = wgroups.size();
-  int G = sigsg.size();
-  
-  // 1) Precompute residuals Z
-  arma::mat Z = computeZ_res_cpp(zList, theta0);
-  
-  // 2) Create full group index vector gee = 1..G
-  IntegerVector gee(G);
-  for (int g = 0; g < G; ++g) gee[g] = g + 1;
-  
-  // 3) Initial objective value
-  double old_obj = wgfeObj_bs_cpp(zList, theta0, wgroups, sigsg, sig0);
-  
-  int count = 0;
-  int i     = 0;
-  
-  // 4) Local‐jump loop: stop after N consecutive non‐improving steps
-  while (count != N) {
-    // advance index 1..N
-    i = (i % N) + 1;
-    
-    // 4a) Recompute alpha based on current grouping
-    arma::mat alpha = computeAlpha_cpp(Z, wgroups);
-    
-    // 4b) Build candidate set = gee \ { current group of unit i }
-    int curg = wgroups[i - 1];
-    std::vector<int> cand;
-    cand.reserve(G - 1);
-    for (int g = 0; g < G; ++g) {
-      if (gee[g] != curg) cand.push_back(gee[g]);
-    }
-    IntegerVector candidates = wrap(cand);
-    
-    // 4c) Evaluate jump for unit i
-    NumericVector neighbor = wgfeJump_bs_cpp(
-      candidates,
-      i,
-      wgroups,
-      Z,
-      alpha,
-      sigsg,
-      sig0
-    );
-    
-    double new_obj = neighbor[0];
-    
-    // 4d) Accept or reject
-    if (new_obj < old_obj) {
-      // adopt new grouping
-      for (int j = 0; j < N; ++j) {
-        wgroups[j] = neighbor[j + 1];
+      // Decode proposed grouping
+      IntegerVector w_new(clone(wgroups));
+      for (int j = 0; j < N; ++j) w_new[j] = static_cast<int>(nb[j + 1]);
+      
+      // Check that no group becomes empty
+      std::vector<int> cnt_new = compute_counts(w_new);
+      if (!keeps_all_nonempty(cnt_new)) {
+        // Reject infeasible proposal; move on
+        ++count;
+        continue;
       }
-      old_obj = new_obj;
-      count   = 0;
+      
+      // Accept proposal
+      wgroups = w_new;
+      counts  = std::move(cnt_new);
+      oldObj  = obj;
+      count   = 0;                 // reset since we improved
     } else {
-      ++count;
+      ++count;                     // no improvement; advance
     }
   }
   
   return wgroups;
 }
+
 
 
 // [[Rcpp::export]]
@@ -1796,3 +1759,104 @@ Rcpp::NumericMatrix seHet_cpp(const Rcpp::List&           zList,
   return out;
 }
 
+
+// In-place partial shuffle of first k items (Fisher–Yates), using R's RNG
+template <typename It>
+inline void partial_shuffle(It first, It last, int k) {
+  int m = (int)std::distance(first, last);
+  if (k <= 0 || m <= 1) return;
+  if (k > m) k = m;
+  for (int i = 0; i < k; ++i) {
+    // unif_rand() in [0,1), safe with floor
+    int j = i + (int)std::floor(unif_rand() * (m - i));
+    std::iter_swap(first + i, first + j);
+  }
+}
+
+// [[Rcpp::export]]
+Rcpp::IntegerVector random_move_cpp(Rcpp::IntegerVector wgroups,  // N
+                                         Rcpp::IntegerVector gee,      // G (unique labels)
+                                         Rcpp::IntegerVector Seq,      // candidate unit indices (1-based)
+                                         int n) {                      // max units to move
+  using namespace Rcpp;
+  RNGScope scope;
+  
+  const int N = wgroups.size();
+  const int G = gee.size();
+  const int S = Seq.size();
+  if (n <= 0 || N == 0 || G <= 1 || S == 0) return wgroups;
+  
+  // label -> position 0..G-1
+  std::unordered_map<int,int> lab2pos;
+  lab2pos.reserve((size_t)G);
+  for (int g = 0; g < G; ++g) lab2pos[ gee[g] ] = g;
+  
+  // current positions and counts
+  std::vector<int> pos(N), cnt(G, 0);
+  for (int i = 0; i < N; ++i) {
+    auto it = lab2pos.find(wgroups[i]);
+    if (it == lab2pos.end()) stop("wgroups contains label not in gee: %d", wgroups[i]);
+    pos[i] = it->second;
+    ++cnt[pos[i]];
+  }
+  
+  // capacity per group (don’t empty)
+  std::vector<int> cap(G);
+  for (int g = 0; g < G; ++g) cap[g] = std::max(0, cnt[g] - 1);
+  
+  // bucket candidates by group
+  std::vector< std::vector<int> > by_grp(G);
+  for (int s = 0; s < S; ++s) {
+    int i1 = Seq[s];
+    if (i1 < 1 || i1 > N) continue;
+    int i0 = i1 - 1;
+    by_grp[ pos[i0] ].push_back(i0);
+  }
+  
+  // helper: partial shuffle first k
+  auto pshuffle = [](auto first, auto last, int k){
+    int m = (int)std::distance(first, last);
+    if (k <= 0 || m <= 1) return;
+    if (k > m) k = m;
+    for (int i = 0; i < k; ++i) {
+      int j = i + (int)std::floor(unif_rand() * (m - i));
+      std::iter_swap(first + i, first + j);
+    }
+  };
+  
+  // choose units to move, respecting capacities
+  std::vector<int> sel;
+  sel.reserve((size_t)std::min(n, (int)Seq.size()));
+  for (int g = 0; g < G; ++g) {
+    auto &vec = by_grp[g];
+    if (vec.empty() || cap[g] <= 0) continue;
+    pshuffle(vec.begin(), vec.end(), cap[g]);
+    int m = std::min(cap[g], (int)vec.size());
+    sel.insert(sel.end(), vec.begin(), vec.begin() + m);
+  }
+  if (sel.empty()) return wgroups;
+  
+  // trim to n if needed
+  if ((int)sel.size() > n) {
+    pshuffle(sel.begin(), sel.end(), n);
+    sel.resize((size_t)n);
+  }
+  
+  // apply moves: pick destination != current (uniform among G-1)
+  IntegerVector w2 = clone(wgroups);
+  for (int idx : sel) {
+    int cur_pos = pos[idx];
+    int k = (int)std::floor(unif_rand() * (G - 1)); // 0..G-2
+    if (k >= cur_pos) ++k;                           // skip cur_pos -> 0..G-1\{cur_pos}
+    w2[idx] = gee[k];
+    --cnt[cur_pos];
+    ++cnt[k];
+    pos[idx] = k;
+  }
+  
+  // safety
+  for (int g = 0; g < G; ++g) {
+    if (cnt[g] <= 0) stop("internal error: empty group created");
+  }
+  return w2;
+}

@@ -93,12 +93,8 @@ refineGroups_res_cpp <- function(zList, wgroups, sig0, sigsg) {
     .Call(`_gfe_refineGroups_res_cpp`, zList, wgroups, sig0, sigsg)
 }
 
-localJump_cpp <- function(wgroups, Z, alpha, gee, method) {
-    .Call(`_gfe_localJump_cpp`, wgroups, Z, alpha, gee, method)
-}
-
-localJump_res_cpp <- function(zList, theta0, wgroups, sigsg, sig0) {
-    .Call(`_gfe_localJump_res_cpp`, zList, theta0, wgroups, sigsg, sig0)
+localJump_cpp <- function(wgroups, Z, alpha, gee, method, minSize = 1L) {
+    .Call(`_gfe_localJump_cpp`, wgroups, Z, alpha, gee, method, minSize)
 }
 
 se_cpp <- function(Y, X, theta0, groupR, alpha0, sigma0, t) {
@@ -107,6 +103,10 @@ se_cpp <- function(Y, X, theta0, groupR, alpha0, sigma0, t) {
 
 seHet_cpp <- function(zList, theta, groupR, alpha0) {
     .Call(`_gfe_seHet_cpp`, zList, theta, groupR, alpha0)
+}
+
+random_move_cpp <- function(wgroups, gee, Seq, n) {
+    .Call(`_gfe_random_move_cpp`, wgroups, gee, Seq, n)
 }
 
 computeZ_unbalanced_cpp <- function(zList, theta, groups) {
